@@ -1,4 +1,5 @@
 import os
+import datetime
 from fastapi import FastAPI
 import inngest
 import inngest.fast_api
@@ -134,6 +135,9 @@ async def rag_query_pdf(ctx: inngest.Context):
 
 app = FastAPI()
 
+# Serve Inngest functions
+inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf, rag_query_pdf])
+
 # Search endpoint to query stored chunks and sources
 @app.post("/search")
 async def search_chunks(query: str, top_k: int = 5):
@@ -164,4 +168,3 @@ async def search_chunks(query: str, top_k: int = 5):
         logger.error(f"Search error: {str(e)}", exc_info=True)
         return {"error": str(e), "contexts": [], "sources": []}
 
-inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf, rag_query_pdf])
