@@ -5,7 +5,7 @@ import inngest.fast_api
 from dotenv import load_dotenv
 import uuid
 import logging
-import google.generativeai as genai
+import requests
 
 from custom_types import RAGChunkAndSrc, RAGSearchResult
 from data_loader import load_and_chunk_pdf, embed_text, EMBED_DIM
@@ -88,32 +88,48 @@ async def rag_query_pdf(ctx: inngest.Context):
         "Answer concisely based on the context above. If the answer is not contained within the context, say you don't know."
     )
 
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    # Use OpenRouter API
+    api_key = os.getenv("OPEN_ROUTER_API_KEY")
+    if not api_key:
+        raise ValueError("OPEN_ROUTER_API_KEY not found in environment variables")
 
-    # Try to find an available generative model
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-    except Exception:
-        # Fallback: get available models
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        if not available_models:
-            raise RuntimeError("No available generative models found")
-        model_name = available_models[0].split('/')[-1]
-        logger.info(f"Using available model: {model_name}")
-        model = genai.GenerativeModel(model_name)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost",
+        "X-Title": "ChatPDF"
+    }
 
-    message = model.generate_content(
-        [
-            "You answer questions using only the provided context.",
-            user_content
+    payload = {
+        "model": "openrouter/auto",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You answer questions using only the provided context."
+            },
+            {
+                "role": "user",
+                "content": user_content
+            }
         ],
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.2,
-            max_output_tokens=1024
-        )
-    )
+        "temperature": 0.2,
+        "max_tokens": 1024
+    }
 
-    answer = message.text.strip()
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        response.raise_for_status()
+        result = response.json()
+        answer = result["choices"][0]["message"]["content"].strip()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"OpenRouter API error: {str(e)}", exc_info=True)
+        raise
+
     return {"answer": answer, "sources": found.sources, "num_contexts": len(found.contexts)}
 
 app = FastAPI()
